@@ -1,10 +1,11 @@
 package com.example.demo;
 
-import brave.Tracing;
+import brave.baggage.BaggageField;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.sleuth.api.Tracer;
 import org.springframework.cloud.sleuth.instrument.async.TraceRunnable;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -25,7 +26,7 @@ public class GreetingController {
     private RestTemplate restTemplate;
 
     @Autowired
-    private Tracing tracing;
+    private Tracer tracer;
 
     @GetMapping("/left")
     public String left() throws Exception {
@@ -41,16 +42,19 @@ public class GreetingController {
         return "hello";
     }
 
-    private static Runnable tracable(String name, Runnable delegate) {
-        return new TraceRunnable(Tracing.current(), null, delegate, name);
+    private Runnable tracable(String name, Runnable delegate) {
+        return new TraceRunnable(tracer, null, delegate, name);
     }
+
+    @Autowired
+    private BaggageField countryCodeField;
 
     @GetMapping("/middle")
     public String middle() throws Exception {
 
         logger.info("processinging middle");
 
-        DemoApplication.SOME_HEADER.updateValue("new-value");
+        countryCodeField.updateValue("new-value");
         logger.info("mdc {}", MDC.getCopyOfContextMap());
 
         CompletableFuture.runAsync(tracable("right", () -> runHttpRequest(restTemplate, "http://localhost:8080/right"))).get();

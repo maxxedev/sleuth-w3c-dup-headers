@@ -10,6 +10,8 @@ import org.slf4j.MDC;
 import org.springframework.boot.Banner.Mode;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.cloud.sleuth.api.http.HttpResponseParser;
+import org.springframework.cloud.sleuth.instrument.web.HttpServerResponseParser;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
@@ -18,12 +20,12 @@ import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.filter.CommonsRequestLoggingFilter;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 @SpringBootApplication
 public class DemoApplication {
@@ -72,24 +74,41 @@ public class DemoApplication {
         return loggingFilter;
     }
 
-    @Bean
+    @Bean(name = HttpServerResponseParser.NAME)
+    public HttpResponseParser myHttpResponseParser() {
+        return (response, context, span) -> {
+            if (getClass() != null) {
+                throw new RuntimeException();
+            }
+            Object unwrap = response.unwrap();
+            if (unwrap instanceof HttpServletResponse) {
+                HttpServletResponse resp = (HttpServletResponse) unwrap;
+                var headerValue = MDC.get("my-corr-id");
+                resp.addHeader("my-corr-id", "ztz " + headerValue + ":" + System.currentTimeMillis());
+            }
+        };
+    }
+
+    //    @Bean
     ResponseBodyAdvice<Object> upstreamPropagatingRequestFilterAdvice() {
         return new MyAdvice();
     }
 
-    static BaggageField SOME_HEADER = BaggageField.create("some-header");
+    @Bean
+  public  BaggageField countryCodeField() {
+        return BaggageField.create("some-header");
+    }
 
     @Bean
     ScopeDecorator scopeDecorator() {
         return MDCScopeDecorator.newBuilder()
                 .clear()
-                .add(SingleCorrelationField.newBuilder(SOME_HEADER)
+                .add(SingleCorrelationField.newBuilder(countryCodeField())
                         .flushOnUpdate()
                         .build())
                 .build();
     }
 
-    @ControllerAdvice
     public static class MyAdvice implements ResponseBodyAdvice<Object> {
 
         @Override
