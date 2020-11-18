@@ -64,9 +64,10 @@ public class GreetingController {
     }
 
     public static void execHttpRequest(RestTemplate restTemplate, String url, MultiValueMap<String, String> requestHeaders) {
+        logger.info("Sending request to {}", url);
+        
         ResponseEntity<String> entity = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(requestHeaders), String.class);
 
-        logger.info("Sending request to {}", url);
         HttpHeaders headers = entity.getHeaders();
 
         headers.forEach((key, value) -> logger.info("{}: {}", key, value));
