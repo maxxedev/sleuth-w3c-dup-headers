@@ -12,41 +12,41 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.cloud.sleuth.api.http.HttpResponseParser;
 import org.springframework.cloud.sleuth.instrument.web.HttpServerResponseParser;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.core.MethodParameter;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.server.ServerHttpRequest;
-import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.filter.CommonsRequestLoggingFilter;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 @SpringBootApplication
 public class DemoApplication {
 
     private static final Logger logger = LoggerFactory.getLogger(DemoApplication.class);
 
+    private static final AtomicInteger parserCallCount = new AtomicInteger();
+    
     public static void main(String... args) throws Exception {
 
-        var context = new SpringApplicationBuilder(DemoApplication.class)
+        ConfigurableApplicationContext context = new SpringApplicationBuilder(DemoApplication.class)
                 .bannerMode(Mode.OFF)
-                .properties("spring.sleuth.enabled=false")
                 .run();
 
         logger.info("starting ...");
-        var httpHeaders = new HttpHeaders();
 
+        // uninstrumented rest template
+        RestTemplate restTemplate = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
         try {
-            GreetingController.runHttpRequest(new RestTemplate(), "http://localhost:8080/middle", httpHeaders);
+            GreetingController.execHttpRequest(restTemplate, "http://localhost:8080/left");
         } finally {
             context.close();
         }
+        
+        logger.info("parserCallCount = {}", parserCallCount);
     }
 
     @Bean
@@ -62,7 +62,6 @@ public class DemoApplication {
     @Bean
     public CommonsRequestLoggingFilter requestLoggingFilter() {
         CommonsRequestLoggingFilter loggingFilter = new CommonsRequestLoggingFilter() {
-
             @Override
             protected void afterRequest(HttpServletRequest request, String message) {
             }
@@ -77,26 +76,20 @@ public class DemoApplication {
     @Bean(name = HttpServerResponseParser.NAME)
     public HttpResponseParser myHttpResponseParser() {
         return (response, context, span) -> {
-            if (getClass() != null) {
-                throw new RuntimeException();
-            }
+            logger.info("parsing http response");
+            parserCallCount.incrementAndGet();
             Object unwrap = response.unwrap();
             if (unwrap instanceof HttpServletResponse) {
                 HttpServletResponse resp = (HttpServletResponse) unwrap;
-                var headerValue = MDC.get("my-corr-id");
-                resp.addHeader("my-corr-id", "ztz " + headerValue + ":" + System.currentTimeMillis());
+                String headerValue = MDC.get("my-header");
+                resp.addHeader("my-header", headerValue + ":" + System.currentTimeMillis());
             }
         };
     }
 
-    //    @Bean
-    ResponseBodyAdvice<Object> upstreamPropagatingRequestFilterAdvice() {
-        return new MyAdvice();
-    }
-
     @Bean
-  public  BaggageField countryCodeField() {
-        return BaggageField.create("some-header");
+    public BaggageField countryCodeField() {
+        return BaggageField.create("my-header");
     }
 
     @Bean
@@ -109,25 +102,4 @@ public class DemoApplication {
                 .build();
     }
 
-    public static class MyAdvice implements ResponseBodyAdvice<Object> {
-
-        @Override
-        public boolean supports(final MethodParameter returnType, final Class<? extends HttpMessageConverter<?>> converterType) {
-            return true;
-        }
-
-        @Override
-        public Object beforeBodyWrite(final Object body,
-                final MethodParameter returnType,
-                final MediaType selectedContentType,
-                final Class<? extends HttpMessageConverter<?>> selectedConverterType,
-                final ServerHttpRequest request,
-                final ServerHttpResponse response) {
-
-            var headerValue = MDC.get("my-corr-id");
-            response.getHeaders().set("my-corr-id", "zz " + headerValue + ":" + System.currentTimeMillis());
-
-            return body;
-        }
-    }
 }

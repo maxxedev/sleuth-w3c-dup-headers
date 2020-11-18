@@ -5,17 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cloud.sleuth.api.Tracer;
-import org.springframework.cloud.sleuth.instrument.async.TraceRunnable;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
-
-import java.util.concurrent.CompletableFuture;
 
 @RestController
 public class GreetingController {
@@ -26,40 +23,30 @@ public class GreetingController {
     private RestTemplate restTemplate;
 
     @Autowired
-    private Tracer tracer;
+    private BaggageField baggageField;
 
     @GetMapping("/left")
     public String left() throws Exception {
-        logger.info("processinging hello");
+        logger.info("processinging left");
 
         logger.info("mdc {}", MDC.getCopyOfContextMap());
 
-        runHttpRequest(restTemplate, "http://localhost:8080/middle");
-        logger.info("processed hello");
-
-        logger.info("replying hello");
-
-        return "hello";
+        execHttpRequest(restTemplate, "http://localhost:8080/middle");
+        logger.info("processed left");
+        return "left";
     }
-
-    private Runnable tracable(String name, Runnable delegate) {
-        return new TraceRunnable(tracer, null, delegate, name);
-    }
-
-    @Autowired
-    private BaggageField countryCodeField;
 
     @GetMapping("/middle")
     public String middle() throws Exception {
 
         logger.info("processinging middle");
 
-        countryCodeField.updateValue("new-value");
+        baggageField.updateValue("new-value");
         logger.info("mdc {}", MDC.getCopyOfContextMap());
 
-        CompletableFuture.runAsync(tracable("right", () -> runHttpRequest(restTemplate, "http://localhost:8080/right"))).get();
+        execHttpRequest(restTemplate, "http://localhost:8080/right");
         logger.info("processed middle");
-        return "hello";
+        return "middle";
     }
 
     @GetMapping("/right")
@@ -67,20 +54,20 @@ public class GreetingController {
         logger.info("processinging right");
         logger.info("mdc {}", MDC.getCopyOfContextMap());
 
-        runHttpRequest(restTemplate, "https://httpbin.org/headers");
+//        execHttpRequest(restTemplate, "https://httpbin.org/headers");
         logger.info("processed right");
         return "right";
     }
 
-    public static void runHttpRequest(RestTemplate restTemplate, String url) {
-        runHttpRequest(restTemplate, url, new HttpHeaders());
+    public static void execHttpRequest(RestTemplate restTemplate, String url) {
+        execHttpRequest(restTemplate, url, new HttpHeaders());
     }
 
-    public static void runHttpRequest(RestTemplate restTemplate, String url, MultiValueMap<String, String> requestHeaders) {
-        var entity = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(requestHeaders), String.class);
+    public static void execHttpRequest(RestTemplate restTemplate, String url, MultiValueMap<String, String> requestHeaders) {
+        ResponseEntity<String> entity = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(requestHeaders), String.class);
 
-        logger.info("");
-        var headers = entity.getHeaders();
+        logger.info("Sending request to {}", url);
+        HttpHeaders headers = entity.getHeaders();
 
         headers.forEach((key, value) -> logger.info("{}: {}", key, value));
         logger.info("");
