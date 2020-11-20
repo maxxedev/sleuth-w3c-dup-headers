@@ -42,6 +42,7 @@ public class GreetingController {
         logger.info("processinging middle");
 
         baggageField.updateValue("new-value");
+        BaggageField.create("my-header2").updateValue("new-value2");
         logger.info("mdc {}", MDC.getCopyOfContextMap());
 
         execHttpRequest(restTemplate, "http://localhost:8080/right");
